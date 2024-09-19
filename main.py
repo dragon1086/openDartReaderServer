@@ -1,12 +1,14 @@
 from fastapi import FastAPI, Query, HTTPException
-from fastapi.responses import Response
 import OpenDartReader
 import os
 from urllib.parse import unquote
 from datetime import date
 from typing import Optional, List
 from models import DartListResponse
+import xml.etree.ElementTree as ET
 import sys
+import numpy as np
+import pandas as pd
 
 sys.stdout.reconfigure(encoding='utf-8')
 sys.stderr.reconfigure(encoding='utf-8')
@@ -74,6 +76,74 @@ def get_company(company_code: str):
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+
+# 1-3. 공시정보 - 공시서류원본문서 (사업보고서)
+@app.get("/document/{rcp_no}")
+async def get_document(
+        rcp_no: str
+):
+    try:
+        # dart.py의 document 메소드 호출
+        xml_text = dart.document(rcp_no, True).replace('&', '&amp;')
+
+        # XML 유효성 검사 (선택사항)
+        try:
+            ET.fromstring(xml_text)
+        except ET.ParseError:
+            raise HTTPException(status_code=500, detail="Invalid XML received from DART")
+
+        # XML 응답 반환
+        return Response(
+            content=xml_text,
+            media_type="application/xml",
+            headers={
+                "Content-Disposition": f"attachment; filename=document_{rcp_no}.xml"
+            }
+        )
+    except ValueError as e:
+        # dart.document 메소드에서 발생할 수 있는 ValueError 처리
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        # 기타 예외 처리
+        raise HTTPException(status_code=500, detail=f"An error occurred: {str(e)}")
+
+
+# 3-4. 단일회사 전체 재무제표
+@app.get("/finstates/all")
+async def get_finstate_all(
+        corp: str = Query(..., description="회사명 또는 종목코드"),
+        bsns_year: int = Query(..., description="사업 연도"),
+        reprt_code: str = Query('11011', description="보고서 코드 (기본값: 11011)"),
+        fs_div: str = Query('CFS', description="재무제표 유형 (기본값: CFS)")
+):
+    try:
+        print(f"Received corp parameter: {corp}")
+
+        # finstate_all 메소드를 직접 호출
+        data = dart.finstate_all(
+            corp=corp,
+            bsns_year=bsns_year,
+            reprt_code=reprt_code,
+            fs_div=fs_div
+        )
+
+        # 결과를 JSON 형태로 반환
+        if data is None or data.empty:
+            return {"message": "No data found."}
+        else:
+            # 무한대 값을 NaN으로 대체
+            data.replace([np.inf, -np.inf], np.nan, inplace=True)
+            # NaN 값을 None으로 대체
+            data = data.where(pd.notnull(data), None)
+            data_dict = data.to_dict(orient='records')
+            return data_dict
+
+    except ValueError as ve:
+        # finstate_all 메소드에서 발생한 ValueError 처리
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        # 기타 예외 처리
+        raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
     import uvicorn
