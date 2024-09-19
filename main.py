@@ -1,10 +1,15 @@
 from fastapi import FastAPI, Query, HTTPException
+from fastapi.responses import Response
 import OpenDartReader
 import os
 from urllib.parse import unquote
 from datetime import date
 from typing import Optional, List
 from models import DartListResponse
+import sys
+
+sys.stdout.reconfigure(encoding='utf-8')
+sys.stderr.reconfigure(encoding='utf-8')
 
 app = FastAPI()
 
@@ -18,30 +23,8 @@ dart = OpenDartReader(API_KEY)
 def read_root():
     return {"message": "OpenDartReader API에 오신 것을 환영합니다!"}
 
-@app.get("/companies/name/{name}")
-async def get_company_by_name(name: str):
-    try:
-        # URL 디코딩
-        decoded_name = unquote(name)
-        result = dart.company_by_name(decoded_name)
-
-        # 결과가 리스트인 경우 (비어 있지 않으면) 그대로 반환
-        if result:
-            return result
-        else:
-            return {"message": f"No companies found with name containing '{decoded_name}'"}
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-@app.get("/companies/code/{company_code}")
-def get_company(company_code: str):
-    try:
-        result = dart.company(company_code)
-        return result
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-
+# 1. 공시정보
+# 1-1. 공시정보 - 공시검색
 @app.get("/list", response_model=List[DartListResponse])
 async def get_dart_list(
         corp: Optional[str] = None,
@@ -65,6 +48,32 @@ async def get_dart_list(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+# 1-2. 공시정보 - 기업개황(기업명 기준)
+@app.get("/companies/name/{name}")
+async def get_company_by_name(name: str):
+    try:
+        # URL 디코딩
+        decoded_name = unquote(name)
+        result = dart.company_by_name(decoded_name)
+
+        # 결과가 리스트인 경우 (비어 있지 않으면) 그대로 반환
+        if result:
+            return result
+        else:
+            return {"message": f"No companies found with name containing '{decoded_name}'"}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+# 1-2. 공시정보 - 기업개황(기업코드 기준)
+@app.get("/companies/code/{company_code}")
+def get_company(company_code: str):
+    try:
+        result = dart.company(company_code)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
 
 if __name__ == "__main__":
     import uvicorn
