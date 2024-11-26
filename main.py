@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Query, HTTPException
+from fastapi import FastAPI, Query, HTTPException, Response
 import OpenDartReader
 import os
 from urllib.parse import unquote
@@ -143,6 +143,46 @@ async def get_finstate_all(
         raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
         # 기타 예외 처리
+        raise HTTPException(status_code=500, detail=str(e))
+
+# 새로 추가: 배당 정보 조회 API
+@app.get("/dividend/{corp}")
+async def get_dividend(
+    corp: str,
+    year: int = Query(..., description="조회 연도"),
+    reprt_code: Optional[str] = Query('11011', description="보고서 코드 (11011:사업보고서, 11012:반기보고서, 11013:분기보고서, 11014:등록법인결산보고서)")
+):
+    """
+    특정 기업의 배당 정보를 조회합니다.
+    
+    Parameters:
+    - corp: 종목코드 또는 회사명
+    - year: 조회 연도 (예: 2022)
+    - reprt_code: 보고서 코드 (기본값: 11011 사업보고서)
+    
+    Returns:
+    - 배당 관련 정보 (배당금, 배당수익률 등)
+    """
+    try:
+        result = dart.report(
+            corp=corp,
+            key_word='배당',
+            bsns_year=year,
+            reprt_code=reprt_code
+        )
+        
+        if result is None or result.empty:
+            return {"message": "No dividend data found."}
+        
+        # 무한대 값과 NaN 처리
+        result.replace([np.inf, -np.inf], np.nan, inplace=True)
+        result = result.where(pd.notnull(result), None)
+        
+        return result.to_dict('records')
+        
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
